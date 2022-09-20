@@ -1,0 +1,6 @@
+*.zip
+*.o
+getopt/
+dirops/
+obj/
+forking/
