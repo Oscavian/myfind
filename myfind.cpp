@@ -1,6 +1,6 @@
 #include <iostream>
-#include <stdlib.h>
-#include <assert.h>
+#include <cstdlib>
+#include <cassert>
 #include <unistd.h>
 #include <algorithm>
 #include <ostream>
@@ -9,9 +9,8 @@
 #include <sys/wait.h>
 #include <sys/types.h>
 
-void printHelp(std::string programm_name) {
+void printHelp(const std::string& programm_name) {
     std::cout << "Usage: " << programm_name <<  " [-R] [-i] directory filename1 [filename2] ...[filenameN]\n\n";
-    return;
 }
 
 bool isInside(const std::string& str, char c) {
@@ -35,7 +34,7 @@ int main(int argc, char* argv[]) {
     std::string path;
     std::vector<std::string> files;
 
-    for (auto arg : args) {
+    for (const auto& arg : args) {
         std::cout << arg << std::endl;
     }
 
@@ -69,31 +68,35 @@ int main(int argc, char* argv[]) {
         exit(1);
     }
 
-
-
     //Prune options out of arg vector
-    ///TODO
     for (auto arg : args) {
         if (arg.at(0) != '-'){
             files.push_back(arg);
         }
     }
 
-    path = files[0];
-    files.erase(files.begin());
+    //check for empty files
+    if (!files.empty()){
+        path = files[0];
+        files.erase(files.begin());
+    } else {
+        std::cerr << program_name << ": Error: No target files specified\n";
+        exit(1);
+    }
 
+    //check dir pattern
     if (!isInside(path, '/')){
         std::cerr << program_name << ": Error: " << path << " is not a directory.\n";
         printHelp(program_name);
+        exit(1);
     }
 
     std::cout << "Path: " << path << std::endl;
-    for (auto file: files) {
+    for (const auto& file: files) {
         std::cout << file << std::endl;
     }
 
     //fork and searach for files
-    ///TODO
 
 
 
