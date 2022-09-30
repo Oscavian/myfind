@@ -13,6 +13,8 @@
 #include <cstring>
 #include <algorithm>
 
+
+
 void printHelp(const std::string& programm_name) {
     std::cout << "Usage: " << programm_name <<  " [-R] [-i] directory filename1 [filename2] ...[filenameN]\n\n";
 }
@@ -22,12 +24,13 @@ bool isInside(const std::string& str, char c) {
 }
 
 struct DirCont {
-    std::string path;
     std::vector<std::string> files;
     std::vector<std::string> directories;
 }; 
 
 struct DirCont* getDirectoryContent(const std::string& path);
+
+void printPath(std::string searchedFile, std::string path);
 
 bool opt_recursive = false;
 bool opt_case_insensitive = false;
@@ -112,24 +115,26 @@ int main(int argc, char* argv[]) {
         exit(1);
     }
 
-    //std::cout << "Path: " << path << std::endl;
-    //for (const auto& file: files) {
-    //    std::cout << file << std::endl;
-    //}
-
     //fork and searach for files
 
     //list directory -> iterate through
     struct DirCont* entries = getDirectoryContent(path);
+    std::string searchedFile = files[0];
+   
+   //Probleme: 
+   //find() findet nur erstes passendes Element;
+   //wenn in einem Directory zB Test.txt und test.txt sind, würde auch bei -i nur ein File gefunden werden
+   //
+   //Bei printPath() mit gesetzter Option -i wird die gefundene Datei am Ende des Pfades immer klein geschrieben,
+   //da alles auf lowercase gesetzt wird, um zu vergleichen
+   //wenn die Datei so angegeben werden soll, wie sie wirklich heißt,
+   //müssen wir den nicht-lowercase Namen zwischenspeichern 
 
-    if (std::find(entries->files.begin(), entries->files.end(), files[0]) != entries->files.end()){
-        std::cout << "Element found!\n";
-        //std::cout << entries->path << "/" << files[0] << std::endl;
+    if (std::find(entries->files.begin(), entries->files.end(), searchedFile) != entries->files.end()){
+        printPath(searchedFile, path);    
     } else {
         std::cout << "Element not found\n";
     }
-
-
 
     delete entries;    
     return 0;
@@ -172,4 +177,44 @@ struct DirCont* getDirectoryContent(const std::string& path){
     
 
     return dircont;
+}
+
+void printPath(std::string searchedFile, std::string path){
+    std::cout << "Element found!\n";
+    if(path[0] != '/'){
+        //wenn der Pfad relativ ist
+        char *relativepath = new char[path.length() + 1];
+        //string path muss zu char* konvertiert werden für realpath()
+        strcpy(relativepath, path.c_str());
+        if(relativepath == NULL){
+            std::cerr << "Transforming from string to char* did not work" << std::endl;
+            exit(1);
+        }
+        //std::string myrelp(relativepath);
+        //std::cout << "Relative Path:" << myrelp << "/" << searchedFile << std::endl;
+
+        char absolutepath [PATH_MAX+1];
+        char *ptr;
+        //findet den absoluten Pfad von einem relativen, speichert in absolutepath
+        if((ptr = realpath(relativepath, absolutepath)) == NULL){
+            std::cerr << "Finding absolute path not possible" << std::endl;
+            delete relativepath;
+            exit(1);
+        };
+        delete relativepath;
+        
+        //char* zu string für einfacheres Ausgeben
+        std::string myabsp(ptr);
+
+        std::cout << "Path:" <<  myabsp << "/" << searchedFile << std::endl;
+        
+    } else {
+        //wenn der Pfad absolut ist
+        if(path.length() == 1){
+            //wenn man in root sucht (path == /)
+            std::cout << "Path: Root/" << searchedFile << std::endl;
+        }else{
+           std::cout << "Path:" << path << "/" << searchedFile << std::endl; 
+        } 
+    }
 }
