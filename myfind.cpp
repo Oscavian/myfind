@@ -28,9 +28,11 @@ struct DirCont {
     std::vector<std::string> directories;
 }; 
 
-struct DirCont* getDirectoryContent(const std::string& path);
+void printPath(std::string searchedFile, std::string& path);
 
-void printPath(std::string searchedFile, std::string path);
+//normalSearch = getDirectoryContent, just renamed for coherency
+struct DirCont* normalSearch(std::string& path);
+void recursiveSearch(std::string searchedFile, std::string path, struct DirCont* dircont);
 
 bool opt_recursive = false;
 bool opt_case_insensitive = false;
@@ -115,72 +117,158 @@ int main(int argc, char* argv[]) {
         exit(1);
     }
 
-    //fork and searach for files
-
-    //list directory -> iterate through
-    struct DirCont* entries = getDirectoryContent(path);
     std::string searchedFile = files[0];
-   
-   //Probleme: 
-   //find() findet nur erstes passendes Element;
-   //wenn in einem Directory zB Test.txt und test.txt sind, würde auch bei -i nur ein File gefunden werden
-   //
-   //Bei printPath() mit gesetzter Option -i wird die gefundene Datei am Ende des Pfades immer klein geschrieben,
-   //da alles auf lowercase gesetzt wird, um zu vergleichen
-   //wenn die Datei so angegeben werden soll, wie sie wirklich heißt,
-   //müssen wir den nicht-lowercase Namen zwischenspeichern 
 
-    if (std::find(entries->files.begin(), entries->files.end(), searchedFile) != entries->files.end()){
-        printPath(searchedFile, path);    
+    if(opt_recursive){
+        struct DirCont* dircont = new DirCont;
+        recursiveSearch(searchedFile, path, dircont);
+        delete dircont;
     } else {
-        std::cout << "Element not found\n";
-    }
+        struct DirCont* entries = normalSearch(path);
 
-    delete entries;    
+        //loop lists all found files corresponding with searchedFile
+        //especially important for searches with -i as find() only gets the first entry of a matching file
+        //and would skip others eg. searchedFile = test.txt, matching files = test.txt, Test.txt, TEST.txt usw.
+        while(1){
+            //position is iterator on matching entry
+            auto position = std::find(entries->files.begin(), entries->files.end(), searchedFile);
+            //position != entries->files.end() means searched entry exists in vector 
+            if (position != entries->files.end()){
+                std::cout << "Element found!\n";
+                printPath(searchedFile, path);
+                entries->files.erase(position);   
+            } else {
+                ///////////std::cout << "No more elements matching " << searchedFile << " in this directory\n";
+                entries->files.clear();
+                break;
+            } 
+        }
+    
+        //Probleme: 
+        //Bei printPath() mit gesetzter Option -i wird die gefundene Datei am Ende des Pfades immer klein geschrieben,
+        //da alles auf lowercase gesetzt wird, um zu vergleichen
+        //wenn die Datei so angegeben werden soll, wie sie wirklich heißt,
+        //müssen wir den nicht-lowercase Namen zwischenspeichern 
+
+        delete entries;  
+    }  
     return 0;
 }
 
-struct DirCont* getDirectoryContent(const std::string& path){
-    
+struct DirCont* normalSearch(std::string& path){
     struct dirent *direntp;
-    struct DirCont* dircont = new DirCont;
     DIR *dirp;
+    struct DirCont* dircont = new DirCont();
 
-    if ( (dirp = opendir(&(path[0]))) == NULL) {
+    if ((dirp = opendir(&(path[0]))) == NULL) {
         std::cerr << "Failed to open directory!\n";
         exit(1);
     }
 
-    // char cwd_buf[255];
-    // if (getcwd(cwd_buf, 255) == NULL) {
-    //     std::cerr << "Failed to get cwd.\n";
-    //     exit(1);
-    // }
-    //dircont->path = std::string(cwd_buf);
-
     while ((direntp = readdir(dirp)) != NULL) {
         if(direntp->d_type == DT_REG){
-            dircont->files.push_back(std::string(direntp->d_name));        
+            dircont->files.push_back(std::string(direntp->d_name));   
+             //std::cout << direntp->d_name << " is file\n";     
         } else if (direntp->d_type == DT_DIR){
             if (strcmp(direntp->d_name, ".") != 0 && strcmp(direntp->d_name, "..") != 0){
                 dircont->directories.push_back(std::string(direntp->d_name));
+                //std::cout << direntp->d_name << " is dir\n"; 
             }
         } 
     }
+    while ((closedir(dirp) == -1) && (errno == EINTR))
+        ;
+
     if(opt_case_insensitive){
         for(int j = 0; j < dircont->files.size(); j++){
             std::transform(dircont->files.at(j).begin(), dircont->files.at(j).end(), dircont->files.at(j).begin(), [](unsigned char c){ return std::tolower(c);});
         }
     }
-    while ((closedir(dirp) == -1) && (errno == EINTR))
-        ;
-    
-
     return dircont;
 }
 
-void printPath(std::string searchedFile, std::string path){
-    std::cout << "Element found!\n";
+void recursiveSearch(std::string searchedFile, std::string path, struct DirCont* dircont){
+    struct dirent *direntp;
+    DIR *dirp;
+
+    ///////////std::cout << "Path to be looked at: " << path << std::endl;
+    if ((dirp = opendir(&(path[0]))) == NULL) {
+        std::cerr << "Failed to open directory!\n";
+        exit(1);
+    }
+
+    //used below to check if subdirs have been added = current dir has childdirs, no backing out to parentdir yet
+    int dirInVec = dircont->directories.size();
+
+    while ((direntp = readdir(dirp)) != NULL) {
+        if(direntp->d_type == DT_REG){
+            dircont->files.push_back(std::string(direntp->d_name)); 
+
+             ///////////std::cout << direntp->d_name << " is file\n";     
+        } else if (direntp->d_type == DT_DIR){
+            if (strcmp(direntp->d_name, ".") != 0 && strcmp(direntp->d_name, "..") != 0){
+                ///////////dircont->directories.push_back(std::string(direntp->d_name));
+
+                //dirs are inserted at front of vec, so that newest dirs (subdirs) are first looked at below
+                //important for keeping the hierarchy of dirs intact
+                dircont->directories.insert(dircont->directories.begin(), std::string(direntp->d_name));
+
+                ///////////std::cout << direntp->d_name << " is dir\n"; 
+            }
+        } 
+    }
+    while ((closedir(dirp) == -1) && (errno == EINTR))
+        ;
+
+    if(opt_case_insensitive){
+        for(int j = 0; j < dircont->files.size(); j++){
+            std::transform(dircont->files.at(j).begin(), dircont->files.at(j).end(), dircont->files.at(j).begin(), [](unsigned char c){ return std::tolower(c);});
+        }
+    }
+    while(1){
+        auto position = std::find(dircont->files.begin(), dircont->files.end(), searchedFile);
+        if (position != dircont->files.end()){
+            std::cout << "Element found!\n";
+            printPath(searchedFile, path);
+            dircont->files.erase(position);   
+        } else {
+            ///////////std::cout << "No more elements matching " << searchedFile << " in this directory\n";
+            //clear files as all other found files are irrelevant and needn't be saved
+            dircont->files.clear();
+            break;
+        } 
+    }
+
+    do{
+        ///////////std::cout << "\ndirs before: " << dirInVec << " dirs after search: " << dircont->directories.size() << "\n";
+        
+        //if compares dirs in vec before readind dir and after
+        //if size has changed, that means current dir has subdirs
+        //if current dir has no subdirs, return to parentdir
+        if(dirInVec == dircont->directories.size()){
+            return;
+        }
+        else{
+            //get the first subdirectory in the vector = next dir to read
+            std::string nextDir = dircont->directories.front();
+
+            ///////////std::cout << "\nnext dir: " << nextDir << "\n";
+
+            //then immediately delete it from the vector to prevent double-checking
+            dircont->directories.erase(dircont->directories.begin());
+
+            ///////////for(std::string i : dircont->directories) 
+                ///////////std::cout << "Dir in list: " << i << "\n" << std::endl;
+
+            recursiveSearch(searchedFile, path + "/" + nextDir, dircont);
+        }
+    //keep going until vec of dirs empty, no more dirs to check
+    }while(!dircont->directories.empty());
+    ///////////std::cout << "No more directories to check\n";
+    return;
+}
+
+void printPath(std::string searchedFile, std::string& path){
     if(path[0] != '/'){
         //wenn der Pfad relativ ist
         char *relativepath = new char[path.length() + 1];
